@@ -1,0 +1,815 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>AGENTS-12 - Investigacion de WhatsApp en dashboard</title>
+  <style>
+    :root {
+      color-scheme: light;
+      --text: #17202a;
+      --muted: #5b6673;
+      --border: #d8dee6;
+      --bg: #ffffff;
+      --soft: #f6f8fa;
+      --accent: #0f766e;
+      --warn: #9a3412;
+      --risk: #b91c1c;
+    }
+
+    body {
+      margin: 0;
+      background: var(--bg);
+      color: var(--text);
+      font-family: Arial, Helvetica, sans-serif;
+      line-height: 1.55;
+    }
+
+    main {
+      max-width: 1180px;
+      margin: 0 auto;
+      padding: 32px 24px 56px;
+    }
+
+    h1, h2, h3 {
+      line-height: 1.2;
+      margin: 0 0 12px;
+    }
+
+    h1 {
+      font-size: 30px;
+      margin-bottom: 8px;
+    }
+
+    h2 {
+      font-size: 22px;
+      border-top: 1px solid var(--border);
+      padding-top: 28px;
+      margin-top: 32px;
+    }
+
+    h3 {
+      font-size: 17px;
+      margin-top: 24px;
+    }
+
+    p {
+      margin: 0 0 12px;
+    }
+
+    ul, ol {
+      margin-top: 8px;
+      padding-left: 24px;
+    }
+
+    li {
+      margin: 5px 0;
+    }
+
+    table {
+      border-collapse: collapse;
+      width: 100%;
+      margin: 14px 0 22px;
+      font-size: 14px;
+    }
+
+    th, td {
+      border: 1px solid var(--border);
+      padding: 10px;
+      vertical-align: top;
+      text-align: left;
+    }
+
+    th {
+      background: var(--soft);
+      font-weight: 700;
+    }
+
+    pre {
+      background: #0b1220;
+      color: #e5edf7;
+      overflow-x: auto;
+      padding: 14px;
+      border-radius: 6px;
+      font-size: 13px;
+      line-height: 1.45;
+    }
+
+    code {
+      font-family: Menlo, Consolas, Monaco, monospace;
+      font-size: 0.95em;
+    }
+
+    .meta {
+      color: var(--muted);
+      margin-bottom: 24px;
+    }
+
+    .callout {
+      border-left: 4px solid var(--accent);
+      background: #eefaf7;
+      padding: 12px 14px;
+      margin: 16px 0;
+    }
+
+    .warning {
+      border-left-color: var(--warn);
+      background: #fff7ed;
+    }
+
+    .risk {
+      border-left-color: var(--risk);
+      background: #fef2f2;
+    }
+
+    .pill {
+      display: inline-block;
+      border: 1px solid var(--border);
+      border-radius: 999px;
+      padding: 2px 9px;
+      font-size: 12px;
+      color: var(--muted);
+      background: var(--soft);
+      margin-right: 6px;
+    }
+  </style>
+</head>
+<body>
+<main>
+  <article>
+    <h1>AGENTS-12 - Investigacion de solucion para WhatsApp en dashboard</h1>
+    <p class="meta">
+      Fecha: 2026-05-16. Repositorio de salida: <code>infra-specs</code>. Documento para revision humana antes de ejecutar cambios en infraestructura o producto.
+    </p>
+
+    <section>
+      <h2>Resumen ejecutivo</h2>
+      <p>
+        La integracion es factible si el dashboard usa la <strong>WhatsApp Business Platform</strong> como canal servidor a servidor y los usuarios internos chatean desde la aplicacion autenticada, no desde WhatsApp Web ni desde sus telefonos personales. El numero del lead no puede desaparecer de todo el sistema porque Meta, el backend y el canal de mensajeria necesitan un identificador direccionable para enviar mensajes. Lo que si es factible es que el numero no se muestre ni viaje al frontend, que se almacene cifrado, que se use solo desde un servicio backend con permisos controlados y que cada acceso quede auditado.
+      </p>
+      <div class="callout">
+        <p>
+          Recomendacion principal: construir un modulo propio sobre Meta Cloud API para el MVP si el objetivo central es proteger leads dentro del dashboard. Usar un BSP como Twilio, 360dialog, Gupshup o un inbox comercial solo si se prioriza velocidad de salida sobre control fino de datos, UI y costos.
+        </p>
+      </div>
+      <p>
+        La solucion no debe prometer proteccion absoluta contra exfiltracion: un agente puede pedir el numero al cliente dentro del chat, el cliente puede escribirlo en un mensaje, o un screenshot puede capturar datos visibles. El alcance real debe ser reducir la exposicion del numero en UI, API, exports, logs y permisos, mas controles de monitoreo y auditoria para detectar abuso.
+      </p>
+    </section>
+
+    <section>
+      <h2>Contexto y objetivo</h2>
+      <p>
+        El CEO solicita que los usuarios del dashboard puedan iniciar sesion y conversar con clientes dentro del proyecto por WhatsApp, sin ver el numero telefonico de los leads para reducir el riesgo de que se los lleven fuera de la plataforma.
+      </p>
+      <p>
+        El repo disponible para este ticket es <code>infra-specs</code>; no se incluyo el codigo del dashboard <code>dash admins</code> en este workspace. Por eso este documento separa hechos verificados, inferencias y recomendaciones, y deja como decision pendiente revisar el repo real del dashboard antes de estimar esfuerzo final.
+      </p>
+      <table>
+        <thead>
+          <tr>
+            <th>Elemento</th>
+            <th>Definicion para esta investigacion</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>Objetivo funcional</td>
+            <td>Permitir conversaciones WhatsApp desde una vista de proyecto o lead dentro del dashboard.</td>
+          </tr>
+          <tr>
+            <td>Objetivo de proteccion</td>
+            <td>No exponer el telefono del cliente al agente interno salvo roles explicitamente aprobados.</td>
+          </tr>
+          <tr>
+            <td>Decision humana requerida</td>
+            <td>Aprobar canal oficial, presupuesto, tratamiento de datos personales, politicas de opt-in y alcance de controles anti-exfiltracion.</td>
+          </tr>
+        </tbody>
+      </table>
+    </section>
+
+    <section>
+      <h2>Alcance, no alcance y supuestos</h2>
+      <h3>Alcance</h3>
+      <ul>
+        <li>Evaluar opciones tecnicas para integrar WhatsApp al dashboard.</li>
+        <li>Definir arquitectura objetivo para chat, webhooks, almacenamiento, permisos y auditoria.</li>
+        <li>Proponer plan de implementacion, validaciones, riesgos, rollback y criterios de aceptacion.</li>
+        <li>Definir controles para que el telefono del lead no sea visible en la UI ni en respuestas API normales.</li>
+      </ul>
+
+      <h3>No alcance</h3>
+      <ul>
+        <li>No se implementa codigo del dashboard en este ticket.</li>
+        <li>No se abren cuentas de Meta, WABA, Twilio u otros proveedores.</li>
+        <li>No se aprueban plantillas, politica legal, terminos de privacidad ni contratos de proveedor.</li>
+        <li>No se garantiza que un agente no pueda obtener el numero si el cliente lo escribe voluntariamente en el chat.</li>
+      </ul>
+
+      <h3>Supuestos</h3>
+      <ul>
+        <li>El dashboard ya tiene autenticacion, usuarios internos y algun modelo de proyecto, lead o cliente.</li>
+        <li>Los leads ya tienen telefonos recolectados por formularios, ads o canales comerciales con consentimiento revisable.</li>
+        <li>La empresa esta dispuesta a usar un numero WhatsApp Business propiedad de la empresa, no el numero personal de cada agente.</li>
+        <li>La primera version puede iniciar con mensajes entrantes o con plantillas aprobadas para mensajes salientes fuera de la ventana de 24 horas.</li>
+      </ul>
+    </section>
+
+    <section>
+      <h2>Hechos verificados, inferencias y recomendaciones</h2>
+      <table>
+        <thead>
+          <tr>
+            <th>Tipo</th>
+            <th>Punto</th>
+            <th>Implicacion</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td><span class="pill">Verificado</span></td>
+            <td>WhatsApp Business Platform esta orientada a negocios medianos o grandes que comunican a escala mediante acceso programatico.</td>
+            <td>Encaja mejor que la Business App para un dashboard multiusuario y controlado por backend.</td>
+          </tr>
+          <tr>
+            <td><span class="pill">Verificado</span></td>
+            <td>Meta documenta APIs oficiales para enviar y recibir mensajes, Business Management API, Flows y Embedded Signup.</td>
+            <td>La integracion debe ser por API oficial y webhooks, no por automatizacion de WhatsApp Web.</td>
+          </tr>
+          <tr>
+            <td><span class="pill">Verificado</span></td>
+            <td>Los mensajes se cobran por mensaje entregado segun categoria y mercado; los mensajes de servicio dentro de ventana de atencion son gratuitos, y la ventana de 24 horas se abre o reinicia con cada mensaje del usuario.</td>
+            <td>La UI debe mostrar si la conversacion esta dentro de ventana libre o si se necesita plantilla aprobada.</td>
+          </tr>
+          <tr>
+            <td><span class="pill">Verificado</span></td>
+            <td>La politica de WhatsApp exige opt-in, respetar opt-out, perfil de negocio correcto, privacidad, y limita mensajes fuera de la ventana de 24 horas a Message Templates aprobados.</td>
+            <td>El producto necesita registrar consentimiento y bloquear envios no permitidos.</td>
+          </tr>
+          <tr>
+            <td><span class="pill">Inferido</span></td>
+            <td>El objetivo de ocultar numeros se resuelve mejor en el backend y el modelo de permisos, no en WhatsApp mismo.</td>
+            <td>El frontend no debe recibir <code>phone_e164</code>, <code>wa_id</code> crudo ni campos equivalentes salvo rol privilegiado.</td>
+          </tr>
+          <tr>
+            <td><span class="pill">Recomendado</span></td>
+            <td>Usar un servicio interno <code>whatsapp-service</code> que sea el unico componente con token Meta y capacidad de descifrar telefonos.</td>
+            <td>Reduce superficie de fuga y simplifica auditoria, rotacion de secretos y rate limiting.</td>
+          </tr>
+        </tbody>
+      </table>
+    </section>
+
+    <section>
+      <h2>Estado actual y estado deseado</h2>
+      <table>
+        <thead>
+          <tr>
+            <th>Area</th>
+            <th>Estado actual probable</th>
+            <th>Estado deseado</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>Canal WhatsApp</td>
+            <td>Conversaciones fuera del dashboard, posiblemente en celulares, WhatsApp Web o cuentas separadas.</td>
+            <td>Canal oficial centralizado en WABA/Cloud API, con mensajes enviados desde backend y recibidos por webhook.</td>
+          </tr>
+          <tr>
+            <td>Identidad de agentes</td>
+            <td>El agente puede contactar por fuera si ve el numero.</td>
+            <td>El agente usa su usuario del dashboard; el cliente ve el perfil del negocio, no el telefono personal del agente.</td>
+          </tr>
+          <tr>
+            <td>Datos del lead</td>
+            <td>Telefono visible en UI, listados o exports.</td>
+            <td>Telefono cifrado en backend, con hash para busqueda interna y token de conversacion para operar sin exponerlo.</td>
+          </tr>
+          <tr>
+            <td>Control operativo</td>
+            <td>Poca trazabilidad de mensajes, respuestas, tiempos y abuso.</td>
+            <td>Auditoria por usuario, lead, proyecto, mensaje, template, export y evento de lectura.</td>
+          </tr>
+        </tbody>
+      </table>
+    </section>
+
+    <section>
+      <h2>Opciones evaluadas</h2>
+      <table>
+        <thead>
+          <tr>
+            <th>Opcion</th>
+            <th>Descripcion</th>
+            <th>Pros</th>
+            <th>Contras</th>
+            <th>Factibilidad para ocultar numero</th>
+            <th>Recomendacion</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>Meta Cloud API directa</td>
+            <td>Integrar el backend del dashboard con Graph API, webhooks y una WABA propia.</td>
+            <td>Maximo control de datos, UI, permisos, costos directos y auditoria.</td>
+            <td>Mayor esfuerzo inicial; requiere configurar Meta Business, app, webhooks, templates, monitoreo y seguridad.</td>
+            <td>Alta. El numero queda en backend cifrado y no se expone al frontend.</td>
+            <td>Opcion recomendada para MVP si proteger leads es requisito principal.</td>
+          </tr>
+          <tr>
+            <td>BSP/API provider</td>
+            <td>Usar Twilio, 360dialog, Gupshup, Infobip u otro proveedor que abstrae parte de Meta.</td>
+            <td>Onboarding y soporte mas guiados; APIs y herramientas maduras; algunos tienen inbox o Conversations.</td>
+            <td>Costo adicional, lock-in, limitaciones de datos segun API del proveedor, dependencia operativa.</td>
+            <td>Media-alta si se usa como API backend. Media-baja si se embebe su inbox sin control granular.</td>
+            <td>Valida si el tiempo de salida pesa mas que el control, o si el equipo no quiere operar Meta directamente.</td>
+          </tr>
+          <tr>
+            <td>Twilio Conversations</td>
+            <td>Producto de conversaciones multicanal con soporte de WhatsApp y patrones de masked communication.</td>
+            <td>Rapido para chats, webhooks, participantes y casos cross-channel; documenta comunicacion sin compartir numeros privados.</td>
+            <td>Sigue requiriendo WABA/sender y el numero existe en Twilio/backend; puede complicar migracion futura.</td>
+            <td>Media-alta. Buen patron de masking, pero revisar si su API permite no exponer <code>address</code> al dashboard.</td>
+            <td>Buena alternativa si el equipo prefiere comprar infraestructura de conversaciones.</td>
+          </tr>
+          <tr>
+            <td>Inbox comercial embebido</td>
+            <td>Usar respond.io, WATI, Zendesk, Intercom u otro inbox con WhatsApp, posiblemente embebido por SSO o iframe.</td>
+            <td>Salida muy rapida, funciones de agentes, asignacion y plantillas listas.</td>
+            <td>Menos control sobre ocultamiento de numeros, permisos por proyecto y experiencia integrada del dashboard.</td>
+            <td>Variable. Debe validarse proveedor por proveedor con pruebas de UI/API/export.</td>
+            <td>Util para piloto operativo, no ideal si el numero del lead nunca debe ser visible.</td>
+          </tr>
+          <tr>
+            <td>WhatsApp Business App o Web</td>
+            <td>Usar la app movil, WhatsApp Web, QR compartidos o librerias no oficiales de automatizacion.</td>
+            <td>Barato al inicio y conocido por usuarios.</td>
+            <td>Riesgo de politicas, baja confiabilidad, poca auditoria, numeros visibles, dificil multiusuario, sesiones fragiles.</td>
+            <td>Baja. No cumple el objetivo de evitar robo de leads.</td>
+            <td>No recomendado.</td>
+          </tr>
+        </tbody>
+      </table>
+    </section>
+
+    <section>
+      <h2>Arquitectura propuesta</h2>
+      <p>
+        La arquitectura objetivo separa la experiencia de agente de los datos sensibles. El dashboard opera con identificadores internos de conversacion y lead; solo un servicio backend tiene acceso al token de Meta y al telefono descifrado.
+      </p>
+      <pre><code>Cliente WhatsApp
+  &lt;-&gt; WhatsApp Business Platform / Cloud API
+       &lt;- webhooks HTTPS firmados -&gt; whatsapp-service
+       &lt;- REST interno / eventos -&gt; API del dashboard
+       &lt;- JSON sin telefono -&gt; frontend dash admins
+
+Datos sensibles:
+  - phone_e164_ciphertext: cifrado con KMS/Vault
+  - phone_lookup_hash: HMAC para deduplicar/buscar sin revelar
+  - phone_last4: opcional y solo visible a roles aprobados
+  - wa_contact_id / bsuid / conversation_id: identificadores operativos no mostrados como telefono</code></pre>
+
+      <h3>Componentes</h3>
+      <table>
+        <thead>
+          <tr>
+            <th>Componente</th>
+            <th>Responsabilidad</th>
+            <th>Datos sensibles</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td><code>whatsapp-service</code></td>
+            <td>Enviar mensajes, recibir webhooks, validar firma, manejar retries, mapear conversaciones, aplicar ventana de 24 horas.</td>
+            <td>Si. Token Meta, telefono cifrado/descifrado en memoria, ids de WABA y phone number.</td>
+          </tr>
+          <tr>
+            <td>API dashboard</td>
+            <td>Autorizacion por proyecto, endpoints para UI, busqueda de conversaciones, asignacion, notas y auditoria.</td>
+            <td>No debe exponer telefono crudo a clientes normales.</td>
+          </tr>
+          <tr>
+            <td>Frontend dashboard</td>
+            <td>Inbox por proyecto, lista de conversaciones, composer, template picker, historial y estados.</td>
+            <td>No recibe telefono. Muestra nombre, alias, fuente, proyecto y estado.</td>
+          </tr>
+          <tr>
+            <td>Base de datos</td>
+            <td>Persistir cuentas WABA, conversaciones, mensajes, eventos webhook, templates, auditoria y consentimientos.</td>
+            <td>Si. Requiere cifrado, roles DB y mascaramiento en dumps.</td>
+          </tr>
+          <tr>
+            <td>Cola/event bus</td>
+            <td>Procesar webhooks y envios de forma asincrona e idempotente.</td>
+            <td>Debe transportar payload minimo o cifrado; no logs con telefono.</td>
+          </tr>
+        </tbody>
+      </table>
+
+      <h3>Modelo de datos minimo</h3>
+      <pre><code>whatsapp_accounts
+  id, provider, waba_id, phone_number_id, display_name, project_id, status
+
+whatsapp_contacts
+  id, lead_id, project_id, phone_e164_ciphertext, phone_lookup_hash,
+  phone_last4, wa_id_ciphertext, bsuid, profile_name, opt_in_status,
+  opt_in_source, opt_in_at, created_at, updated_at
+
+whatsapp_conversations
+  id, project_id, lead_id, whatsapp_contact_id, assigned_user_id,
+  state, last_customer_message_at, service_window_expires_at,
+  last_message_at, created_at, updated_at
+
+whatsapp_messages
+  id, conversation_id, provider_message_id, direction, sender_user_id,
+  message_type, body_redacted, body_ciphertext, media_id, template_name,
+  status, provider_error_code, sent_at, delivered_at, read_at, created_at
+
+whatsapp_webhook_events
+  id, provider_event_id, event_type, payload_hash, received_at,
+  processed_at, processing_status, retry_count
+
+audit_events
+  id, actor_user_id, project_id, lead_id, action, target_type,
+  target_id, ip_hash, user_agent_hash, created_at</code></pre>
+
+      <h3>API interna sugerida</h3>
+      <pre><code>GET    /api/projects/{project_id}/whatsapp/conversations
+GET    /api/projects/{project_id}/whatsapp/conversations/{conversation_id}
+POST   /api/projects/{project_id}/whatsapp/conversations/{conversation_id}/messages
+POST   /api/projects/{project_id}/whatsapp/conversations/{conversation_id}/assign
+GET    /api/projects/{project_id}/whatsapp/templates?category=utility
+POST   /api/webhooks/meta/whatsapp
+
+Regla de contrato:
+  Ninguna respuesta para rol agente incluye phone_e164, wa_id crudo,
+  recipient_id, address, proxy_address ni URLs de proveedor que revelen telefono.</code></pre>
+
+      <h3>Ejemplo de envio desde backend</h3>
+      <pre><code>POST https://graph.facebook.com/v{VERSION}/{PHONE_NUMBER_ID}/messages
+Authorization: Bearer {SYSTEM_USER_ACCESS_TOKEN}
+Content-Type: application/json
+
+{
+  "messaging_product": "whatsapp",
+  "to": "{RECIPIENT_PHONE_E164_FROM_SECURE_STORE}",
+  "type": "text",
+  "text": {
+    "body": "Hola, te escribe el equipo de soporte."
+  }
+}</code></pre>
+
+      <h3>Reglas de UI</h3>
+      <ul>
+        <li>La lista de conversaciones muestra nombre, proyecto, ultima actividad, estado, asignado y etiquetas; no muestra telefono.</li>
+        <li>El detalle de conversacion no renderiza telefono aunque exista en el payload de proveedor.</li>
+        <li>Fuera de la ventana de 24 horas, el composer libre se bloquea y se muestra selector de template aprobado.</li>
+        <li>La descarga/exportacion de conversaciones queda deshabilitada para agentes o entrega versiones sin telefono.</li>
+        <li>Un modo estricto puede redactar patrones de telefonos escritos dentro del cuerpo de mensajes entrantes antes de mostrarlos a agentes.</li>
+      </ul>
+    </section>
+
+    <section>
+      <h2>Controles para evitar fuga de leads</h2>
+      <table>
+        <thead>
+          <tr>
+            <th>Control</th>
+            <th>Implementacion sugerida</th>
+            <th>Limitacion residual</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>Mascaramiento de telefono</td>
+            <td>El backend nunca serializa el telefono para roles agente. Solo roles como admin compliance pueden ver ultimos 4 digitos o telefono completo con justificacion.</td>
+            <td>No evita screenshots de otros datos ni que el cliente escriba su numero.</td>
+          </tr>
+          <tr>
+            <td>Cifrado de datos</td>
+            <td>Telefono y <code>wa_id</code> cifrados en reposo; hash HMAC para deduplicacion; llaves en KMS/Vault; rotacion planificada.</td>
+            <td>El servicio de envio debe descifrar en memoria.</td>
+          </tr>
+          <tr>
+            <td>RBAC por proyecto</td>
+            <td>El agente solo ve conversaciones asignadas o de proyectos autorizados; denies por defecto.</td>
+            <td>Requiere que el modelo de proyectos actual este bien definido.</td>
+          </tr>
+          <tr>
+            <td>Auditoria</td>
+            <td>Registrar lectura de conversacion, envio, asignacion, cambio de estado, export, intento denegado y acceso a dato sensible.</td>
+            <td>La auditoria disuade y detecta, pero no elimina abuso humano.</td>
+          </tr>
+          <tr>
+            <td>DLP basico en mensajes</td>
+            <td>Detectar E.164, emails y patrones de telefono en cuerpos de mensaje; mostrar redaccion para agentes o marcar riesgo.</td>
+            <td>Puede generar falsos positivos y afectar conversacion comercial.</td>
+          </tr>
+          <tr>
+            <td>Sin WhatsApp Web</td>
+            <td>Prohibir QR compartidos, sesiones web y librerias no oficiales. Todo envio pasa por backend.</td>
+            <td>Necesita capacitacion y politica interna.</td>
+          </tr>
+          <tr>
+            <td>Watermark y anti-copy</td>
+            <td>Watermark con usuario en la vista, rate limit de copy/export, bloqueo de select/copy solo si no afecta usabilidad.</td>
+            <td>No es seguridad fuerte; ayuda como friccion y trazabilidad.</td>
+          </tr>
+        </tbody>
+      </table>
+    </section>
+
+    <section>
+      <h2>Costos y operacion</h2>
+      <p>
+        Meta cobra por mensaje entregado segun mercado y categoria. La pagina oficial de pricing indica cuatro categorias: marketing, utility, authentication y service. Los mensajes de service no tienen cargo dentro de la ventana de 24 horas abierta por mensajes del usuario; tambien se documenta una ventana gratis de 72 horas cuando el usuario llega desde ciertos entry points como Click to WhatsApp Ads o Facebook Page CTA.
+      </p>
+      <table>
+        <thead>
+          <tr>
+            <th>Partida</th>
+            <th>Impacto esperado</th>
+            <th>Como controlarlo</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>Mensajes Meta</td>
+            <td>Variable por pais, categoria y volumen. Marketing suele ser mas caro que service/utility.</td>
+            <td>Dashboard de gasto por proyecto, categoria, template y agente; alertas por presupuesto.</td>
+          </tr>
+          <tr>
+            <td>BSP o Twilio</td>
+            <td>Fee adicional por mensaje, sender o asiento, segun proveedor.</td>
+            <td>Comparar TCO a 6 y 12 meses contra Cloud API directa.</td>
+          </tr>
+          <tr>
+            <td>Infraestructura</td>
+            <td>Webhook service, cola, DB, almacenamiento de media, logs, monitoreo.</td>
+            <td>Retencion limitada, compresion, lifecycle para media y logs.</td>
+          </tr>
+          <tr>
+            <td>Operacion Meta</td>
+            <td>Aprobacion de templates, salud de WABA, calidad, opt-outs, rate limits y errores.</td>
+            <td>Runbook de soporte, alertas y owner operativo claro.</td>
+          </tr>
+        </tbody>
+      </table>
+    </section>
+
+    <section>
+      <h2>Plan de implementacion</h2>
+      <ol>
+        <li>
+          <strong>Descubrimiento en dash admins.</strong> Revisar stack, auth, RBAC, modelo de proyecto/lead, permisos actuales, donde se muestra telefono, exports, logs y APIs existentes.
+        </li>
+        <li>
+          <strong>Aprobacion de producto y legal.</strong> Confirmar paises, casos de uso, politica de opt-in, privacidad, retencion, roles que podran ver telefono y si habra redaccion de mensajes.
+        </li>
+        <li>
+          <strong>Seleccion de proveedor.</strong> Decidir entre Meta Cloud API directa o BSP. Para requisito de ocultamiento fuerte, iniciar con Cloud API directa salvo que haya restriccion operativa.
+        </li>
+        <li>
+          <strong>Setup de Meta.</strong> Crear o validar Meta Business Account, WABA, numero, Business Profile, app, permisos, System User token, webhook verification token y App Secret.
+        </li>
+        <li>
+          <strong>Backend base.</strong> Implementar <code>whatsapp-service</code>, validacion de webhooks, cola, idempotencia, envio de texto, persistencia de eventos y estados de delivery.
+        </li>
+        <li>
+          <strong>Modelo seguro de contactos.</strong> Migrar o guardar telefonos con cifrado, hash HMAC y contrato API que nunca devuelva telefono crudo para agentes.
+        </li>
+        <li>
+          <strong>UI de agente.</strong> Inbox por proyecto, conversacion, composer, selector de templates, asignacion y estados. Confirmar por inspeccion de red que no se entrega telefono.
+        </li>
+        <li>
+          <strong>Templates y consentimientos.</strong> Registrar opt-in, templates por categoria, aprobaciones y reglas para bloquear salidas fuera de ventana.
+        </li>
+        <li>
+          <strong>Observabilidad y auditoria.</strong> Metricas, logs sin PII, trazas por message id, alertas de errores, gasto y eventos de acceso sensible.
+        </li>
+        <li>
+          <strong>Piloto controlado.</strong> Activar con un proyecto, pocos agentes y numero dedicado. Medir tiempos, errores, gasto, feedback y eventos de fuga.
+        </li>
+        <li>
+          <strong>Rollout gradual.</strong> Expandir por proyecto, con capacitacion y politicas internas sobre no pedir datos personales fuera de la plataforma.
+        </li>
+      </ol>
+    </section>
+
+    <section>
+      <h2>Dependencias y responsables sugeridos</h2>
+      <table>
+        <thead>
+          <tr>
+            <th>Area</th>
+            <th>Responsable sugerido</th>
+            <th>Dependencia</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>Decision de negocio</td>
+            <td>CEO / Product Owner</td>
+            <td>Aprobar objetivo de masking, presupuesto y prioridad contra otras iniciativas.</td>
+          </tr>
+          <tr>
+            <td>Privacidad y compliance</td>
+            <td>Legal / Compliance</td>
+            <td>Aviso de privacidad, consentimiento, opt-out, retencion y acceso a datos personales.</td>
+          </tr>
+          <tr>
+            <td>Infraestructura</td>
+            <td>DevOps / Platform</td>
+            <td>Secrets, KMS/Vault, dominios HTTPS para webhooks, colas, monitoreo.</td>
+          </tr>
+          <tr>
+            <td>Backend</td>
+            <td>Backend lead</td>
+            <td>Servicio WhatsApp, modelo de datos, webhooks, auditoria, contratos API.</td>
+          </tr>
+          <tr>
+            <td>Frontend</td>
+            <td>Frontend lead</td>
+            <td>Inbox, composer, template picker, estados, UX sin telefono.</td>
+          </tr>
+          <tr>
+            <td>Operacion comercial</td>
+            <td>Sales Ops / Soporte</td>
+            <td>Plantillas, respuestas, asignaciones, capacitacion de agentes y seguimiento de SLA.</td>
+          </tr>
+        </tbody>
+      </table>
+    </section>
+
+    <section>
+      <h2>Riesgos y mitigaciones</h2>
+      <table>
+        <thead>
+          <tr>
+            <th>Riesgo</th>
+            <th>Severidad</th>
+            <th>Mitigacion</th>
+            <th>Rollback</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>Exposicion accidental de telefono en API, logs o exports.</td>
+            <td>Alta</td>
+            <td>Tests de contrato, redaccion en serializers, logs estructurados sin PII, revisiones de seguridad.</td>
+            <td>Desactivar endpoints afectados, rotar llaves, revocar exports, investigar auditoria.</td>
+          </tr>
+          <tr>
+            <td>Uso de mensajes fuera de politica o sin opt-in.</td>
+            <td>Alta</td>
+            <td>Modelo de consentimiento obligatorio, bloqueo de mensajes fuera de ventana y template approval.</td>
+            <td>Pausar envios salientes, revisar templates, volver a canal manual aprobado.</td>
+          </tr>
+          <tr>
+            <td>Cuenta WABA restringida por calidad, spam o datos incorrectos.</td>
+            <td>Alta</td>
+            <td>Monitorear calidad, opt-outs, reportes, volumen y contenido. Mantener perfil de negocio exacto.</td>
+            <td>Desactivar campanas, apelar en Meta, usar canal alterno aprobado para soporte critico.</td>
+          </tr>
+          <tr>
+            <td>Webhook caido o lento.</td>
+            <td>Media</td>
+            <td>Responder 200 rapido, procesar asincrono, cola con retries, alertas de latencia y error rate.</td>
+            <td>Activar modo degradado: solo lectura, reintentos manuales y pausa de salientes si hay desorden de estado.</td>
+          </tr>
+          <tr>
+            <td>Agente intenta sacar al lead por texto.</td>
+            <td>Media</td>
+            <td>Auditoria, DLP basico, politicas internas, revision de conversaciones, alertas por patrones de telefono.</td>
+            <td>Suspender usuario, bloquear conversacion, escalar a compliance.</td>
+          </tr>
+          <tr>
+            <td>Proveedor elegido limita masking o exporta telefono.</td>
+            <td>Media</td>
+            <td>Prueba de concepto con inspeccion de API/UI/export antes de contrato anual.</td>
+            <td>Migrar a Meta Cloud API directa o proveedor con controles adecuados.</td>
+          </tr>
+        </tbody>
+      </table>
+    </section>
+
+    <section>
+      <h2>Validaciones y criterios de aceptacion</h2>
+      <h3>Validaciones tecnicas</h3>
+      <ul>
+        <li>Un agente autenticado puede ver y responder una conversacion asignada sin que el payload de red incluya telefono crudo.</li>
+        <li>Un agente sin permiso de proyecto recibe 403 al intentar listar o abrir conversaciones de otro proyecto.</li>
+        <li>El webhook valida firma, deduplica eventos y persiste mensajes entrantes y estados sin duplicados.</li>
+        <li>El composer libre se bloquea automaticamente cuando <code>service_window_expires_at</code> esta vencido.</li>
+        <li>El envio con template fuera de ventana usa solo templates aprobados y registra categoria/costo estimado.</li>
+        <li>Los logs de aplicacion, cola y errores no contienen <code>phone_e164</code>, <code>wa_id</code> crudo ni token de proveedor.</li>
+        <li>Los mensajes, lecturas, exports e intentos denegados generan <code>audit_events</code>.</li>
+      </ul>
+
+      <h3>Criterios de aceptacion de negocio</h3>
+      <ul>
+        <li>Los agentes pueden operar desde el dashboard sin usar telefono personal ni WhatsApp Web.</li>
+        <li>El cliente recibe mensajes desde el perfil oficial del negocio.</li>
+        <li>Sales Ops puede asignar conversaciones por proyecto y medir SLA de respuesta.</li>
+        <li>Compliance puede auditar quien vio o respondio cada conversacion.</li>
+        <li>Producto confirma que el numero del lead no aparece en UI, exports normales, notificaciones ni respuestas API de agente.</li>
+      </ul>
+    </section>
+
+    <section>
+      <h2>Plan de rollback</h2>
+      <ol>
+        <li>Deshabilitar feature flag de WhatsApp en el dashboard por proyecto o globalmente.</li>
+        <li>Pausar envios salientes desde <code>whatsapp-service</code> y conservar solo ingestion de webhooks si es necesario para no perder mensajes.</li>
+        <li>Revocar o rotar token de proveedor si hubo exposicion de secreto.</li>
+        <li>Desuscribir webhook o apuntarlo a endpoint de mantenimiento si el procesamiento causa incidentes.</li>
+        <li>Volver al canal operativo anterior aprobado por negocio, dejando claro que ese canal puede no cumplir el mismo nivel de masking.</li>
+        <li>Preservar transcripts y auditoria para investigacion, aplicando retencion y controles de privacidad.</li>
+      </ol>
+    </section>
+
+    <section>
+      <h2>Preguntas abiertas</h2>
+      <ul>
+        <li>Que stack usa <code>dash admins</code> y como modela usuarios, proyectos, leads y permisos?</li>
+        <li>El telefono del lead ya esta oculto en alguna parte o hoy aparece en listados, detalle, exports y APIs?</li>
+        <li>Se usara un numero WhatsApp nuevo o un numero existente que podria requerir migracion o coexistencia?</li>
+        <li>En que paises estan los leads? Esto afecta tarifas, plantillas, compliance y horarios de contacto.</li>
+        <li>Que roles, si alguno, pueden ver el numero completo para soporte o compliance?</li>
+        <li>El caso inicial es solo responder mensajes entrantes o tambien iniciar contacto proactivo?</li>
+        <li>Se necesita IA/bot o solamente agentes humanos? Si hay IA, revisar politicas especificas antes de disenar el flujo.</li>
+        <li>Que retencion de transcripts, media y auditoria exige negocio/legal?</li>
+      </ul>
+    </section>
+
+    <section>
+      <h2>Decision recomendada</h2>
+      <p>
+        Aprobar una fase 0 de descubrimiento sobre el repo <code>dash admins</code> y una fase 1 de MVP con Meta Cloud API directa, numero de negocio dedicado, webhook backend, almacenamiento cifrado, UI de inbox por proyecto y contrato API sin telefono para agentes. La aprobacion debe incluir que el objetivo es <strong>ocultar y controlar exposicion interna</strong>, no eliminar completamente el telefono de todos los sistemas.
+      </p>
+      <p>
+        Si negocio necesita piloto en menos tiempo que el desarrollo propio, evaluar Twilio Conversations o un BSP con una prueba de concepto obligatoria: inspeccionar UI, APIs, webhooks, exports, roles y logs para confirmar que el telefono del cliente no se expone a agentes.
+      </p>
+    </section>
+
+    <section>
+      <h2>Fuentes consultadas</h2>
+      <table>
+        <thead>
+          <tr>
+            <th>Fuente</th>
+            <th>Uso en esta investigacion</th>
+            <th>URL</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>WhatsApp Business Platform overview</td>
+            <td>Validar que la plataforma es para acceso programatico, conversaciones, customer care, integraciones y casos de uso a escala.</td>
+            <td><a href="https://whatsappbusiness.com/products/business-platform/">https://whatsappbusiness.com/products/business-platform/</a></td>
+          </tr>
+          <tr>
+            <td>WhatsApp Business Platform pricing</td>
+            <td>Validar cobro por mensaje entregado, categorias, service messages, ventana de 24 horas y entry point de 72 horas.</td>
+            <td><a href="https://whatsappbusiness.com/products/platform-pricing/">https://whatsappbusiness.com/products/platform-pricing/</a></td>
+          </tr>
+          <tr>
+            <td>WhatsApp Business Messaging Policy</td>
+            <td>Validar opt-in, opt-out, templates fuera de 24 horas, privacidad, perfil de negocio y riesgo de enforcement.</td>
+            <td><a href="https://whatsappbusiness.com/policy/">https://whatsappbusiness.com/policy/</a></td>
+          </tr>
+          <tr>
+            <td>Meta official Postman workspace</td>
+            <td>Validar colecciones oficiales de WhatsApp Business Platform, Cloud API, Business Management API, Flows y Embedded Signup.</td>
+            <td><a href="https://www.postman.com/meta/whatsapp-business-platform/overview">https://www.postman.com/meta/whatsapp-business-platform/overview</a></td>
+          </tr>
+          <tr>
+            <td>Meta WhatsApp docs orientation</td>
+            <td>Orientar endpoints, System User token, webhooks y payloads enlazando a documentacion oficial de Meta.</td>
+            <td><a href="https://hyperleap.ai/whatsapp-business-api/documentation">https://hyperleap.ai/whatsapp-business-api/documentation</a></td>
+          </tr>
+          <tr>
+            <td>Twilio WhatsApp docs</td>
+            <td>Comparar opcion BSP/API y patrones de conversaciones WhatsApp.</td>
+            <td><a href="https://www.twilio.com/docs/whatsapp">https://www.twilio.com/docs/whatsapp</a></td>
+          </tr>
+          <tr>
+            <td>Twilio Conversations WhatsApp guide</td>
+            <td>Evaluar masked communication, clienteling, requisitos de onboarding y templates en una alternativa comprada.</td>
+            <td><a href="https://www.twilio.com/docs/conversations-classic/using-whatsapp-conversations">https://www.twilio.com/docs/conversations-classic/using-whatsapp-conversations</a></td>
+          </tr>
+          <tr>
+            <td>Business scoped user ids notes</td>
+            <td>Considerar cambios recientes en identificadores, BSUID y casos donde <code>wa_id</code> puede venir vacio; no se usa como control unico de seguridad.</td>
+            <td><a href="https://whatsapp-docs.kap.so/documentation/whatsapp/business-scoped-user-ids">https://whatsapp-docs.kap.so/documentation/whatsapp/business-scoped-user-ids</a></td>
+          </tr>
+        </tbody>
+      </table>
+    </section>
+  </article>
+</main>
+</body>
+</html>
