@@ -14,6 +14,18 @@ Los documentos deben funcionar como planes puente entre investigacion y ejecucio
 - Incluye estilos solo cuando ayuden a la lectura del documento. Mantenerlos simples, autocontenidos y sin dependencias externas salvo que el plan lo justifique.
 - Los comandos, configuraciones, politicas IAM, SQL, YAML, JSON o snippets tecnicos deben ir en bloques `pre > code`.
 
+## Estructura del repositorio
+
+- Este repositorio es una app Vite estatica preparada para Vercel.
+- Todas las investigaciones finales deben vivir dentro de `public/investigaciones/`.
+- El nombre del archivo debe seguir el formato `<ticket-id>-<slug-corto>.html`, por ejemplo `agents-12-investigacion-whatsapp-dashboard.html`.
+- `index.html` carga la app y el visualizador vive en `src/main.js` y `src/styles.css`.
+- Cada vez que se agregue, renombre o retire una investigacion, tambien se debe actualizar el arreglo `researchItems` dentro de `src/research-items.js`.
+- El visualizador debe listar las investigaciones en orden y permitir que una persona abra o revise cada documento antes de aprobar cambios.
+- No dejar investigaciones finales como HTML suelto en la raiz del repo.
+- La ruta publica de una investigacion debe apuntar a `/investigaciones/<archivo>.html`.
+- Para validar el visualizador antes de entregar cambios, correr `npm run build` cuando las dependencias esten instaladas.
+
 ## Nivel de detalle esperado
 
 Cada documento debe ser profundo y operativo. Cuando aplique, incluir:
